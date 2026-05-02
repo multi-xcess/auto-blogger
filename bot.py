@@ -1,4 +1,5 @@
 import os
+import random  # <--- STEP 1: Add this import
 import feedparser
 import google.generativeai as genai
 from google.oauth2.credentials import Credentials
@@ -16,20 +17,22 @@ def run_blogger_bot():
         print("Fetching Google Trends...")
         feed = feedparser.parse("https://trends.google.com/trending/rss?geo=US")
         if not feed.entries:
+            print("No trends found.")
             return
 
-        # EXTRACT TREND DATA
-        entry = feed.entries[0]
+        # ==========================================
+        # STEP 2: PICK A RANDOM TREND FROM TOP 10
+        # ==========================================
+        # This prevents posting the same thing every 15 minutes
+        entry = random.choice(feed.entries[:10]) 
         keyword = entry.title
         source_link = entry.link
         
-        # EXTRACT IMAGE URL from the RSS feed
-        # Google Trends RSS uses 'media_thumbnail' or 'picture' tags
         image_url = ""
         if 'media_thumbnail' in entry and len(entry.media_thumbnail) > 0:
             image_url = entry.media_thumbnail[0]['url']
         
-        print(f"Trend: {keyword} | Image: {image_url}")
+        print(f"Selected Trend: {keyword}")
 
         # GENERATE CONTENT WITH AI
         genai.configure(api_key=GEMINI_KEY)
@@ -39,11 +42,10 @@ def run_blogger_bot():
         Write a professional blog post about '{keyword}'.
         Context: {source_link}
         
-        CRITICAL INSTRUCTIONS:
-        1. Start the post with this exact HTML tag: <img src="{image_url}" style="width:100%; height:auto; border-radius:10px;" />
-        2. Follow with the article in clean HTML (<h2>, <p>, etc.).
-        3. Make it 400+ words.
-        4. Do not use markdown code blocks.
+        Instructions:
+        1. Start with: <img src="{image_url}" style="width:100%; height:auto; border-radius:10px;" />
+        2. Write 400+ words in clean HTML.
+        3. Do not use markdown blocks.
         """
         
         response = model.generate_content(prompt)
@@ -54,9 +56,9 @@ def run_blogger_bot():
         service = build('blogger', 'v3', credentials=creds)
 
         post_body = {
-            'title': f"Latest Update: {keyword}",
+            'title': f"Latest News: {keyword}",
             'content': article_html,
-            'labels': ['News', keyword]
+            'labels': ['Trending', keyword]
         }
 
         request = service.posts().insert(blogId=BLOG_ID, body=post_body)
