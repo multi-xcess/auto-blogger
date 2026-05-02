@@ -4,9 +4,7 @@ import google.generativeai as genai
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 
-# ==========================================
-# 1. LOAD CONFIGURATION FROM GITHUB SECRETS
-# ==========================================
+# CONFIGURATION
 GEMINI_KEY = os.getenv("GEMINI_KEY")
 CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
@@ -15,69 +13,58 @@ BLOG_ID = os.getenv("BLOG_ID")
 
 def run_blogger_bot():
     try:
-        # ==========================================
-        # 2. FETCH TRENDS FROM GOOGLE RSS
-        # ==========================================
         print("Fetching Google Trends...")
         feed = feedparser.parse("https://trends.google.com/trending/rss?geo=US")
         if not feed.entries:
-            print("No trends found.")
             return
 
-        # Get the top trend and a related news link
-        top_trend = feed.entries[0]
-        keyword = top_trend.title
-        source_link = top_trend.link
-        print(f"Top Trend Found: {keyword}")
+        # EXTRACT TREND DATA
+        entry = feed.entries[0]
+        keyword = entry.title
+        source_link = entry.link
+        
+        # EXTRACT IMAGE URL from the RSS feed
+        # Google Trends RSS uses 'media_thumbnail' or 'picture' tags
+        image_url = ""
+        if 'media_thumbnail' in entry and len(entry.media_thumbnail) > 0:
+            image_url = entry.media_thumbnail[0]['url']
+        
+        print(f"Trend: {keyword} | Image: {image_url}")
 
-        # ==========================================
-        # 3. GENERATE ARTICLE CONTENT WITH GEMINI
-        # ==========================================
-        print("Generating article with Gemini AI...")
+        # GENERATE CONTENT WITH AI
         genai.configure(api_key=GEMINI_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash-lite')
 
         prompt = f"""
-        Write a professional, engaging blog post about the trending topic: '{keyword}'.
-        Use the following news source for context: {source_link}
+        Write a professional blog post about '{keyword}'.
+        Context: {source_link}
         
-        Requirements:
-        1. Format the entire response in clean HTML (use <h2>, <p>, <ul>, etc.).
-        2. Make it at least 400 words.
-        3. Include an introductory paragraph, 3 subheadings, and a conclusion.
-        4. Do NOT include Markdown code blocks (like ```html). Just the raw HTML tags.
+        CRITICAL INSTRUCTIONS:
+        1. Start the post with this exact HTML tag: <img src="{image_url}" style="width:100%; height:auto; border-radius:10px;" />
+        2. Follow with the article in clean HTML (<h2>, <p>, etc.).
+        3. Make it 400+ words.
+        4. Do not use markdown code blocks.
         """
         
         response = model.generate_content(prompt)
         article_html = response.text
 
-        # ==========================================
-        # 4. AUTHENTICATE AND POST TO BLOGGER
-        # ==========================================
-        print("Connecting to Blogger API...")
-        creds = Credentials(
-            None, 
-            refresh_token=REFRESH_TOKEN, 
-            client_id=CLIENT_ID, 
-            client_secret=CLIENT_SECRET, 
-            token_uri="[https://oauth2.googleapis.com/token](https://oauth2.googleapis.com/token)"
-        )
-        
+        # POST TO BLOGGER
+        creds = Credentials(None, refresh_token=REFRESH_TOKEN, client_id=CLIENT_ID, client_secret=CLIENT_SECRET, token_uri="https://oauth2.googleapis.com/token")
         service = build('blogger', 'v3', credentials=creds)
 
         post_body = {
-            'title': f"Everything You Need to Know About {keyword}",
+            'title': f"Latest Update: {keyword}",
             'content': article_html,
-            'labels': ['Trending', keyword, 'Automated News']
+            'labels': ['News', keyword]
         }
 
         request = service.posts().insert(blogId=BLOG_ID, body=post_body)
         result = request.execute()
-
-        print(f"Success! Post published at: {result.get('url')}")
+        print(f"Success! Link: {result.get('url')}")
 
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     run_blogger_bot()
